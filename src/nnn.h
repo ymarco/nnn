@@ -31,6 +31,8 @@
 #pragma once
 
 #include <curses.h>
+#include <sys/stat.h>
+#include <ftw.h>
 
 #define CONTROL(c) ((c) & 0x1f)
 
@@ -282,3 +284,102 @@ static struct key bindings[] = {
 	{ KEY_MOUSE,      SEL_CLICK },
 #endif
 };
+
+
+/* TYPE DEFINITIONS */
+typedef unsigned long ulong;
+typedef unsigned int uint;
+typedef unsigned char uchar;
+typedef unsigned short ushort;
+typedef long long ll;
+typedef unsigned long long ull;
+
+/*
+ * NAME_MAX and PATH_MAX may not exist, e.g. with dirent.c_name being a
+ * flexible array on Illumos. Use somewhat accomodating fallback values.
+ */
+#ifndef NAME_MAX
+#define NAME_MAX 255
+#endif
+
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
+
+#define REGEX_MAX 48
+/* STRUCTURES */
+
+/* Directory entry */
+typedef struct entry {
+	char *name;
+	time_t t;
+	off_t size;
+	blkcnt_t blocks; /* number of 512B blocks allocated */
+	mode_t mode;
+#ifndef NOUG
+	uid_t uid;
+	gid_t gid;
+#endif
+	ushort nlen; /* Length of file name, including null byte */
+	uchar flags; /* Flags specific to the file */
+} *pEntry;
+
+/*
+ * Settings
+ * NOTE: update default values if changing order
+ */
+typedef struct {
+	uint filtermode : 1;  /* Set to enter filter mode */
+	uint timeorder  : 1;  /* Set to sort by time */
+	uint sizeorder  : 1;  /* Set to sort by file size */
+	uint apparentsz : 1;  /* Set to sort by apparent size (disk usage) */
+	uint blkorder   : 1;  /* Set to sort by blocks used (disk usage) */
+	uint extnorder  : 1;  /* Order by extension */
+	uint showhidden : 1;  /* Set to show hidden files */
+	uint reserved0  : 1;
+	uint showdetail : 1;  /* Clear to show lesser file info */
+	uint ctxactive  : 1;  /* Context active or not */
+	uint reverse    : 1;  /* Reverse sort */
+	uint version    : 1;  /* Version sort */
+	uint reserved1  : 1;
+	/* The following settings are global */
+	uint curctx     : 3;  /* Current context number */
+	uint prefersel  : 1;  /* Prefer selection over current, if exists */
+	uint reserved2  : 1;
+	uint nonavopen  : 1;  /* Open file on right arrow or `l` */
+	uint autoselect : 1;  /* Auto-select dir in type-to-nav mode */
+	uint cursormode : 1;  /* Move hardware cursor with selection */
+	uint useeditor  : 1;  /* Use VISUAL to open text files */
+	uint reserved3  : 3;
+	uint regex      : 1;  /* Use regex filters */
+	uint x11        : 1;  /* Copy to system clipboard and show notis */
+	uint timetype   : 2;  /* Time sort type (0: access, 1: change, 2: modification) */
+	uint cliopener  : 1;  /* All-CLI app opener */
+	uint waitedit   : 1;  /* For ops that can't be detached, used EDITOR */
+	uint rollover   : 1;  /* Roll over at edges */
+} settings;
+
+
+/* Contexts or workspaces */
+typedef struct {
+	char c_path[PATH_MAX]; /* Current dir */
+	char c_last[PATH_MAX]; /* Last visited dir */
+	char c_name[NAME_MAX + 1]; /* Current file name */
+	char c_fltr[REGEX_MAX]; /* Current filter */
+	settings c_cfg; /* Current configuration */
+	char* pnamebuf;
+	struct entry *pdents;
+	int ndents;
+	int (*nftw_fn)(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf);
+	uint color; /* Color code for directories */
+} context;
+
+
+extern settings default_cfg;
+
+context *make_context(context *pctx, char* path, settings cfg);
+void free_context(context *pctx);
+void clean_context(void *pctx);
+int set_sort_flags(context *pctx, int r);
+void populate(context *pctx);
+char* printent(char *dst, const struct entry *ent);

@@ -97,7 +97,6 @@
 #ifndef __USE_XOPEN_EXTENDED
 #define __USE_XOPEN_EXTENDED 1
 #endif
-#include <ftw.h>
 #include <wchar.h>
 #include <pwd.h>
 #include <grp.h>
@@ -135,17 +134,6 @@
 #define S_BLKSIZE 512 /* S_BLKSIZE is missing on Android NDK (Termux) */
 #endif
 
-/*
- * NAME_MAX and PATH_MAX may not exist, e.g. with dirent.c_name being a
- * flexible array on Illumos. Use somewhat accomodating fallback values.
- */
-#ifndef NAME_MAX
-#define NAME_MAX 255
-#endif
-
-#ifndef PATH_MAX
-#define PATH_MAX 4096
-#endif
 
 #define _ABSSUB(N, M) (((N) <= (M)) ? ((M) - (N)) : ((N) - (M)))
 #define DOUBLECLICK_INTERVAL_NS (400000000)
@@ -165,7 +153,6 @@
 #define CASE ':'
 #define MSGWAIT '$'
 #define SELECT ' '
-#define REGEX_MAX 48
 #define ENTRY_INCR 64 /* Number of dir 'entry' structures to allocate per shot */
 #define NAMEBUF_INCR 0x800 /* 64 dir entries at once, avg. 32 chars per filename = 64*32B = 2KB */
 #define DESCRIPTOR_LEN 32
@@ -235,30 +222,7 @@
 #define FREE 0
 #define CAPACITY 1
 
-/* TYPE DEFINITIONS */
-typedef unsigned long ulong;
-typedef unsigned int uint;
-typedef unsigned char uchar;
-typedef unsigned short ushort;
-typedef long long ll;
-typedef unsigned long long ull;
-
 /* STRUCTURES */
-
-/* Directory entry */
-typedef struct entry {
-	char *name;
-	time_t t;
-	off_t size;
-	blkcnt_t blocks; /* number of 512B blocks allocated */
-	mode_t mode;
-#ifndef NOUG
-	uid_t uid;
-	gid_t gid;
-#endif
-	ushort nlen; /* Length of file name */
-	uchar flags; /* Flags specific to the file */
-} *pEntry;
 
 /* Key-value pairs from env */
 typedef struct {
@@ -275,40 +239,6 @@ typedef struct {
 	const char *str;
 } fltrexp_t;
 
-/*
- * Settings
- * NOTE: update default values if changing order
- */
-typedef struct {
-	uint filtermode : 1;  /* Set to enter filter mode */
-	uint timeorder  : 1;  /* Set to sort by time */
-	uint sizeorder  : 1;  /* Set to sort by file size */
-	uint apparentsz : 1;  /* Set to sort by apparent size (disk usage) */
-	uint blkorder   : 1;  /* Set to sort by blocks used (disk usage) */
-	uint extnorder  : 1;  /* Order by extension */
-	uint showhidden : 1;  /* Set to show hidden files */
-	uint reserved0  : 1;
-	uint showdetail : 1;  /* Clear to show lesser file info */
-	uint ctxactive  : 1;  /* Context active or not */
-	uint reverse    : 1;  /* Reverse sort */
-	uint version    : 1;  /* Version sort */
-	uint reserved1  : 1;
-	/* The following settings are global */
-	uint curctx     : 3;  /* Current context number */
-	uint prefersel  : 1;  /* Prefer selection over current, if exists */
-	uint reserved2  : 1;
-	uint nonavopen  : 1;  /* Open file on right arrow or `l` */
-	uint autoselect : 1;  /* Auto-select dir in type-to-nav mode */
-	uint cursormode : 1;  /* Move hardware cursor with selection */
-	uint useeditor  : 1;  /* Use VISUAL to open text files */
-	uint reserved3  : 3;
-	uint regex      : 1;  /* Use regex filters */
-	uint x11        : 1;  /* Copy to system clipboard and show notis */
-	uint timetype   : 2;  /* Time sort type (0: access, 1: change, 2: modification) */
-	uint cliopener  : 1;  /* All-CLI app opener */
-	uint waitedit   : 1;  /* For ops that can't be detached, used EDITOR */
-	uint rollover   : 1;  /* Roll over at edges */
-} settings;
 
 /* Non-persistent program-internal states */
 typedef struct {
@@ -335,15 +265,6 @@ typedef struct {
 	uint reserved   : 10; /* Adjust when adding/removing a field */
 } runstate;
 
-/* Contexts or workspaces */
-typedef struct {
-	char c_path[PATH_MAX]; /* Current dir */
-	char c_last[PATH_MAX]; /* Last visited dir */
-	char c_name[NAME_MAX + 1]; /* Current file name */
-	char c_fltr[REGEX_MAX]; /* Current filter */
-	settings c_cfg; /* Current configuration */
-	uint color; /* Color code for directories */
-} context;
 
 #ifndef NOSSN
 typedef struct {
@@ -358,7 +279,7 @@ typedef struct {
 /* GLOBALS */
 
 /* Configuration, contexts */
-static settings cfg = {
+settings cfg = {
 	0, /* filtermode */
 	0, /* timeorder */
 	0, /* sizeorder */
@@ -387,6 +308,36 @@ static settings cfg = {
 	0, /* waitedit */
 	1, /* rollover */
 };
+settings default_cfg = {
+	0, /* filtermode */
+	0, /* timeorder */
+	0, /* sizeorder */
+	0, /* apparentsz */
+	0, /* blkorder */
+	0, /* extnorder */
+	0, /* showhidden */
+	0, /* reserved0 */
+	0, /* showdetail */
+	1, /* ctxactive */
+	0, /* reverse */
+	0, /* version */
+	0, /* reserved1 */
+	0, /* curctx */
+	0, /* prefersel */
+	0, /* reserved2 */
+	0, /* nonavopen */
+	1, /* autoselect */
+	0, /* cursormode */
+	0, /* useeditor */
+	0, /* reserved3 */
+	0, /* regex */
+	0, /* x11 */
+	2, /* timetype (T_MOD) */
+	0, /* cliopener */
+	0, /* waitedit */
+	1, /* rollover */
+};
+
 
 static context g_ctx[CTX_MAX] __attribute__ ((aligned));
 
@@ -770,10 +721,10 @@ static haiku_nm_h haiku_hnd;
 /* Forward declarations */
 static void redraw(char *path);
 static int spawn(char *file, char *arg1, char *arg2, uchar flag);
-static int (*nftw_fn)(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf);
+/* static int (*nftw_fn)(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf); */
 static void move_cursor(int target, int ignore_scrolloff);
 static char *load_input(int fd, const char *path);
-static int set_sort_flags(int r);
+int set_sort_flags(context *pctx, int r);
 
 /* Functions */
 
@@ -3311,71 +3262,6 @@ static char *get_kv_val(kv *kvarr, char *buf, int key, uchar max, uchar id)
 	return NULL;
 }
 
-static void resetdircolor(int flags)
-{
-	if (g_state.dircolor && !(flags & DIR_OR_LINK_TO_DIR)) {
-		attroff(COLOR_PAIR(cfg.curctx + 1) | A_BOLD);
-		g_state.dircolor = 0;
-	}
-}
-
-/*
- * Replace escape characters in a string with '?'
- * Adjust string length to maxcols if > 0;
- * Max supported str length: NAME_MAX;
- */
-#ifndef NOLOCALE
-static wchar_t *unescape(const char *str, uint maxcols)
-{
-	wchar_t * const wbuf = (wchar_t *)g_buf;
-	wchar_t *buf = wbuf;
-	size_t lencount = 0;
-
-	/* Convert multi-byte to wide char */
-	size_t len = mbstowcs(wbuf, str, NAME_MAX);
-
-	len = wcswidth(wbuf, len);
-
-	/* Reduce number of wide chars to max columns */
-	if (len > maxcols) {
-		while (*buf && lencount <= maxcols) {
-			if (*buf <= '\x1f' || *buf == '\x7f')
-				*buf = '\?';
-
-			++buf;
-			++lencount;
-		}
-
-		lencount = maxcols + 1;
-
-		/* Reduce wide chars one by one till it fits */
-		do
-			len = wcswidth(wbuf, --lencount);
-		while (len > maxcols);
-
-		wbuf[lencount] = L'\0';
-	} else {
-		do /* We do not expect a NULL string */
-			if (*buf <= '\x1f' || *buf == '\x7f')
-				*buf = '\?';
-		while (*++buf);
-	}
-
-	return wbuf;
-}
-#else
-static char *unescape(const char *str, uint maxcols)
-{
-	ssize_t len = (ssize_t)xstrsncpy(g_buf, str, maxcols);
-
-	--len;
-	while (--len >= 0)
-		if (g_buf[len] <= '\x1f' || g_buf[len] == '\x7f')
-			g_buf[len] = '\?';
-
-	return g_buf;
-}
-#endif
 
 static char *coolsize(off_t size)
 {
@@ -3560,19 +3446,24 @@ static void print_icon(const struct entry *ent, const int attrs)
 }
 #endif
 
-static void print_time(const time_t *timep)
+static char *print_time(char *dst, const time_t *timep)
 {
 	struct tm *t = localtime(timep);
 
-	printw("%d-%02d-%02d %02d:%02d",
-	       t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min);
+	dst += sprintf(dst, "%d-%02d-%02d %02d:%02d",
+				   t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+				   t->tm_hour, t->tm_min);
+	return dst;
 }
 
-static void printent(const struct entry *ent, uint namecols, bool sel)
+/*
+ * Write entry to dst. Return the minimal location after dest which was not written.
+ * No null terminator is added.
+ * */
+char* printent(char *dst, const struct entry *ent)
 {
 	uchar pair = 0;
 	char ind = '\0';
-	int attrs = 0;
 
 	switch (ent->mode & S_IFMT) {
 	case S_IFREG:
@@ -3591,7 +3482,6 @@ static void printent(const struct entry *ent, uint namecols, bool sel)
 	case S_IFDIR:
 		pair = C_DIR;
 		if (!g_state.oldcolor) {
-			attrs |= A_BOLD;
 			if (g_state.dirctx)
 				pair = cfg.curctx + 1;
 		}
@@ -3599,16 +3489,10 @@ static void printent(const struct entry *ent, uint namecols, bool sel)
 		break;
 	case S_IFLNK:
 		if (ent->flags & DIR_OR_LINK_TO_DIR) {
-			if (!g_state.oldcolor)
-				attrs |= A_BOLD;
 			ind = '/';
 		} else
 			ind = '@';
-
-		if (g_state.oldcolor)
-			attrs |= A_DIM;
-		else
-			pair = (ent->flags & SYM_ORPHAN) ? C_ORP : C_LNK;
+		pair = (ent->flags & SYM_ORPHAN) ? C_ORP : C_LNK;
 		break;
 	case S_IFSOCK:
 		pair = C_SOC;
@@ -3630,53 +3514,25 @@ static void printent(const struct entry *ent, uint namecols, bool sel)
 		break;
 	}
 
-	if (!g_state.oldcolor) {
 		if (ent->flags & FILE_MISSING)
 			pair = C_MIS;
 
-		if (pair && fcolors[pair])
-			attrs |= COLOR_PAIR(pair);
-	}
 
-	if (!ind)
-		++namecols;
+	// leave space for marks at beginning of line
+	*(dst++) = ' ';
 
-	/* Directories are always shown on top */
-	resetdircolor(ent->flags);
-
-	addch((ent->flags & FILE_SELECTED) ? '+' : ' ');
-
-#ifdef ICONS_ENABLED
-	if (!g_state.oldcolor)
-		print_icon(ent, attrs);
-#endif
-
-	if (sel)
-		attrs |= A_REVERSE;
-	if (attrs)
-		attron(attrs);
-
-#ifndef NOLOCALE
-	addwstr(unescape(ent->name, namecols));
-#else
-	addstr(unescape(ent->name, MIN(namecols, ent->nlen) + 1));
-#endif
-
-	if (attrs)
-		attroff(attrs);
+	memcpy(dst, ent->name, ent->nlen - 1);
+	dst += ent->nlen - 1;
 
 	if (ind)
-		addch(ind);
-	addch('\n');
+		*(dst++) = ind;
+	return dst;
 }
 
-static void printent_long(const struct entry *ent, uint namecols, bool sel)
+char* printent_long(char* dst, const struct entry *ent)
 {
-	bool ln = FALSE;
 	char ind1 = '\0', ind2 = '\0';
 	uchar pair = 0;
-	int attrs = sel ? (A_REVERSE | (g_state.oldcolor ? A_DIM : COLOR_PAIR(C_MIS)))
-			: (g_state.oldcolor ? A_DIM : COLOR_PAIR(C_MIS));
 	uint len;
 	char *size;
 	char selgap[]="  ";
@@ -3684,32 +3540,23 @@ static void printent_long(const struct entry *ent, uint namecols, bool sel)
 	if (ent->flags & FILE_SELECTED)
 		selgap[1] = '+';
 
-	/* Directories are always shown on top */
-	resetdircolor(ent->flags);
+	*(dst++) = ' ';
 
-	addch(' ');
-
-	if (attrs)
-		attron(attrs);
 
 	/* Timestamp */
-	print_time(&ent->t);
+	dst = print_time(dst, &ent->t); // TODO
 
-	addstr("  ");
+	*(dst++) = ' ';
+	*(dst++) = ' ';
 
 	/* Permissions */
-	addch('0' + ((ent->mode >> 6) & 7));
-	addch('0' + ((ent->mode >> 3) & 7));
-	addch('0' + (ent->mode & 7));
+	*(dst++) = '0' + ((ent->mode >> 6) & 7);
+	*(dst++) = '0' + ((ent->mode >> 3) & 7);
+	*(dst++) = '0' + (ent->mode & 7);
 
 	switch (ent->mode & S_IFMT) {
 	case S_IFDIR:
 		pair = C_DIR;
-		if (!g_state.oldcolor) {
-			attrs |= A_BOLD;
-			if (g_state.dirctx)
-				pair = cfg.curctx + 1;
-		}
 		ind2 = '/'; // fallthrough
 	case S_IFREG:
 		if (!ind2) {
@@ -3720,31 +3567,26 @@ static void printent_long(const struct entry *ent, uint namecols, bool sel)
 
 			if (ent->flags & HARD_LINK) {
 				pair = C_HRD;
-				ln = TRUE;
 			}
 
 			if (!ent->size)
 				pair = C_UND;
 			else if (!pair)
 				pair = C_FIL;
-
-			if (!ind2) /* Add a column if end indicator is not needed */
-				++namecols;
 		}
 
 		size = coolsize(cfg.blkorder ? ent->blocks << blk_shift : ent->size);
-		len = 10 - (uint)xstrlen(size);
-		while (--len)
-			addch(' ');
-		addstr(size);
+		len = (uint)xstrlen(size);
+		int space_len = 10 - len;
+		while (--space_len)
+			*(dst++) = ' ';
+		memcpy(dst, size, len);
+		dst += len;
 		break;
 	case S_IFLNK:
-		ln = TRUE;
 		pair = (ent->flags & SYM_ORPHAN) ? C_ORP : C_LNK;
 		ind1 = '@';
-		ind2 = (ent->flags & DIR_OR_LINK_TO_DIR) ? '/' : '@';
-		if (ind2 == '/' && !g_state.oldcolor)
-			attrs |= A_BOLD; // fallthrough
+		ind2 = (ent->flags & DIR_OR_LINK_TO_DIR) ? '/' : '@'; // fallthrough
 	case S_IFSOCK:
 		if (!ind1) {
 			pair = C_SOC;
@@ -3770,60 +3612,24 @@ static void printent_long(const struct entry *ent, uint namecols, bool sel)
 			pair = C_UND;
 			ind1 = ind2 = '?';
 		}
-		addstr("        ");
-		addch(ind1);
+		char space[] = "        ";
+		memcpy(dst, space, sizeof(space)-1);
+		dst += sizeof(space) - 1;
+
+		*(dst++) = ind1;
 		break;
 	}
 
-	if (g_state.oldcolor) {
-		if (!sel)
-			attroff(A_DIM);
-		addstr(selgap);
-		if (!ln) {
-			attroff(A_DIM);
-			attrs ^= A_DIM;
-		}
-	} else {
-		if (!sel)
-			attroff(COLOR_PAIR(C_MIS));
-#ifndef ICONS_ENABLED
-		addstr(selgap);
-#endif
-		if (ent->flags & FILE_MISSING)
-			pair = C_MIS;
-		else {
-			attroff(COLOR_PAIR(C_MIS));
-			attrs ^= (COLOR_PAIR(C_MIS));
-		}
 
-		if (pair && fcolors[pair])
-			attrs |= COLOR_PAIR(pair);
-#ifdef ICONS_ENABLED
-		attroff(attrs);
-		addstr(selgap);
-		if (sel)
-			attrs &= ~A_REVERSE;
-		print_icon(ent, attrs);
-		if (sel)
-			attrs |= A_REVERSE;
-#endif
-		attron(attrs);
-	}
-
-#ifndef NOLOCALE
-	addwstr(unescape(ent->name, namecols));
-#else
-	addstr(unescape(ent->name, MIN(namecols, ent->nlen) + 1));
-#endif
-
-	if (attrs)
-		attroff(attrs);
-	if (ind2)
-		addch(ind2);
-	addch('\n');
+	memcpy(dst, selgap, sizeof(selgap)-1);
+	dst += sizeof(selgap)-1;
+	memcpy(dst, ent->name, ent->nlen - 1);
+	dst += ent->nlen - 1;
+	*(dst++) = ind2;
+	return dst;
 }
 
-static void (*printptr)(const struct entry *ent, uint namecols, bool sel) = &printent;
+static char* (*printptr)(char *dst, const struct entry *ent) = &printent;
 
 static void savecurctx(settings *curcfg, char *path, char *curname, int r /* next context num */)
 {
@@ -3978,7 +3784,7 @@ static bool load_session(const char *sname, char **path, char **lastdir, char **
 	*lastdir = g_ctx[cfg.curctx].c_last;
 	*lastname = g_ctx[cfg.curctx].c_name;
 	printptr = cfg.showdetail ? &printent_long : &printent;
-	set_sort_flags('\0'); /* Set correct sort options */
+	/* set_sort_flags('\0'); /\* Set correct sort options *\/ */
 	status = TRUE;
 
 END:
@@ -4909,7 +4715,7 @@ static void dentfree(void)
 	free(mark);
 }
 
-static blkcnt_t dirwalk(char *path, struct stat *psb)
+static blkcnt_t dirwalk(char *path, context *pctx, struct stat *psb)
 {
 	static uint open_max;
 
@@ -4918,12 +4724,12 @@ static blkcnt_t dirwalk(char *path, struct stat *psb)
 		open_max = max_openfds();
 
 	ent_blocks = 0;
-	tolastln();
-	addstr(xbasename(path));
-	addstr(" [^C aborts]\n");
-	refresh();
+	/* tolastln(); */
+	/* addstr(xbasename(path)); */
+	/* addstr(" [^C aborts]\n"); */
+	/* refresh(); */
 
-	if (nftw(path, nftw_fn, open_max, FTW_MOUNT | FTW_PHYS) < 0) {
+	if (nftw(path, pctx->nftw_fn, open_max, FTW_MOUNT | FTW_PHYS) < 0) {
 		DPRINTF_S("nftw failed");
 		return cfg.apparentsz ? psb->st_size : psb->st_blocks;
 	}
@@ -4937,8 +4743,10 @@ static bool selforparent(const char *path)
 	return path[0] == '.' && (path[1] == '\0' || (path[1] == '.' && path[2] == '\0'));
 }
 
-static int dentfill(char *path, struct entry **ppdents)
+int dentfill(context *pctx)
 {
+	char *path = pctx->c_path;
+	settings l_cfg = pctx->c_cfg;
 	uchar entflags = 0;
 	int n = 0, flags = 0;
 	ulong num_saved;
@@ -4956,7 +4764,7 @@ static int dentfill(char *path, struct entry **ppdents)
 
 	int fd = dirfd(dirp);
 
-	if (cfg.blkorder) {
+	if (l_cfg.blkorder) {
 		num_files = 0;
 		dir_blocks = 0;
 		buf = (char *)alloca(xstrlen(path) + NAME_MAX + 2);
@@ -4973,7 +4781,7 @@ static int dentfill(char *path, struct entry **ppdents)
 		} else
 			memset(ihashbmp, 0, HASH_OCTETS << 3);
 
-		attron(COLOR_PAIR(cfg.curctx + 1));
+		/* attron(COLOR_PAIR(l_cfg.curctx + 1)); */
 	}
 
 #if _POSIX_C_SOURCE >= 200112L
@@ -4987,7 +4795,7 @@ static int dentfill(char *path, struct entry **ppdents)
 #if defined(__sun) || defined(__HAIKU__)
 	flags = AT_SYMLINK_NOFOLLOW; /* no d_type */
 #else
-	if (cfg.blkorder || dp->d_type == DT_UNKNOWN) {
+	if (l_cfg.blkorder || dp->d_type == DT_UNKNOWN) {
 		/*
 		 * Optimization added for filesystems which support dirent.d_type
 		 * see readdir(3)
@@ -5005,8 +4813,8 @@ static int dentfill(char *path, struct entry **ppdents)
 		if (selforparent(namep))
 			continue;
 
-		if (!cfg.showhidden && namep[0] == '.') {
-			if (!cfg.blkorder)
+		if (!l_cfg.showhidden && namep[0] == '.') {
+			if (!l_cfg.blkorder)
 				continue;
 
 			if (fstatat(fd, namep, &sb, AT_SYMLINK_NOFOLLOW) == -1)
@@ -5016,7 +4824,7 @@ static int dentfill(char *path, struct entry **ppdents)
 				if (sb_path.st_dev == sb.st_dev) { // NOLINT
 					mkpath(path, namep, buf);
 
-					dir_blocks += dirwalk(buf, &sb);
+					dir_blocks += dirwalk(buf, pctx, &sb);
 
 					if (g_state.interrupt)
 						goto exit;
@@ -5024,7 +4832,7 @@ static int dentfill(char *path, struct entry **ppdents)
 			} else {
 				/* Do not recount hard links */
 				if (sb.st_nlink <= 1 || test_set_bit((uint)sb.st_ino))
-					dir_blocks += (cfg.apparentsz ? sb.st_size : sb.st_blocks);
+					dir_blocks += (l_cfg.apparentsz ? sb.st_size : sb.st_blocks);
 				++num_files;
 			}
 
@@ -5048,32 +4856,32 @@ static int dentfill(char *path, struct entry **ppdents)
 
 		if (n == total_dents) {
 			total_dents += ENTRY_INCR;
-			*ppdents = xrealloc(*ppdents, total_dents * sizeof(**ppdents));
-			if (!*ppdents) {
-				free(pnamebuf);
+			pctx->pdents = xrealloc(pctx->pdents, total_dents * sizeof(*pctx->pdents));
+			if (!pctx->pdents) {
+				free(pctx->pnamebuf);
 				closedir(dirp);
 				errexit();
 			}
-			DPRINTF_P(*ppdents);
+			DPRINTF_P(pctx->pdents);
 		}
 
 		/* If not enough bytes left to copy a file name of length NAME_MAX, re-allocate */
 		if (namebuflen - off < NAME_MAX + 1) {
 			namebuflen += NAMEBUF_INCR;
 
-			pnb = pnamebuf;
-			pnamebuf = (char *)xrealloc(pnamebuf, namebuflen);
-			if (!pnamebuf) {
-				free(*ppdents);
+			pnb = pctx->pnamebuf;
+			pctx->pnamebuf = (char *)xrealloc(pctx->pnamebuf, namebuflen);
+			if (!pctx->pnamebuf) {
+				free(pctx->pdents);
 				closedir(dirp);
 				errexit();
 			}
-			DPRINTF_P(pnamebuf);
+			DPRINTF_P(pctx->pnamebuf);
 
 			/* realloc() may result in memory move, we must re-adjust if that happens */
-			if (pnb != pnamebuf) {
-				dentp = *ppdents;
-				dentp->name = pnamebuf;
+			if (pnb != pctx->pnamebuf) {
+				dentp = pctx->pdents;
+				dentp->name = pctx->pnamebuf;
 
 				for (int count = 1; count < n; ++dentp, ++count)
 					/* Current filename starts at last filename start + length */
@@ -5081,17 +4889,17 @@ static int dentfill(char *path, struct entry **ppdents)
 			}
 		}
 
-		dentp = *ppdents + n;
+		dentp = pctx->pdents + n;
 
 		/* Selection file name */
-		dentp->name = (char *)((size_t)pnamebuf + off);
+		dentp->name = (char *)((size_t)pctx->pnamebuf + off);
 		dentp->nlen = xstrsncpy(dentp->name, namep, NAME_MAX + 1);
 		off += dentp->nlen;
 
 		/* Copy other fields */
-		dentp->t = ((cfg.timetype == T_MOD)
+		dentp->t = ((l_cfg.timetype == T_MOD)
 				? sb.st_mtime
-				: ((cfg.timetype == T_ACCESS) ? sb.st_atime : sb.st_ctime));
+				: ((l_cfg.timetype == T_ACCESS) ? sb.st_atime : sb.st_ctime));
 #if !(defined(__sun) || defined(__HAIKU__))
 		if (!flags && dp->d_type == DT_LNK) {
 			 /* Do not add sizes for links */
@@ -5117,13 +4925,13 @@ static int dentfill(char *path, struct entry **ppdents)
 			entflags = 0;
 		}
 
-		if (cfg.blkorder) {
+		if (l_cfg.blkorder) {
 			if (S_ISDIR(sb.st_mode)) {
 				num_saved = num_files + 1;
 				mkpath(path, namep, buf);
 
 				/* Need to show the disk usage of this dir */
-				dentp->blocks = dirwalk(buf, &sb);
+				dentp->blocks = dirwalk(buf, pctx, &sb);
 
 				if (sb_path.st_dev == sb.st_dev) // NOLINT
 					dir_blocks += dentp->blocks;
@@ -5133,7 +4941,7 @@ static int dentfill(char *path, struct entry **ppdents)
 				if (g_state.interrupt)
 					goto exit;
 			} else {
-				dentp->blocks = (cfg.apparentsz ? sb.st_size : sb.st_blocks);
+				dentp->blocks = (l_cfg.apparentsz ? sb.st_size : sb.st_blocks);
 				/* Do not recount hard links */
 				if (sb.st_nlink <= 1 || test_set_bit((uint)sb.st_ino))
 					dir_blocks += dentp->blocks;
@@ -5160,17 +4968,17 @@ static int dentfill(char *path, struct entry **ppdents)
 	} while ((dp = readdir(dirp)));
 
 exit:
-	if (cfg.blkorder)
-		attroff(COLOR_PAIR(cfg.curctx + 1));
+	if (l_cfg.blkorder)
 
 	/* Should never be null */
 	if (closedir(dirp) == -1)
 		errexit();
 
+	pctx->ndents = n;
 	return n;
 }
 
-static void populate(char *path, char *lastname)
+void populate(context *pctx)
 {
 #ifdef DBGMODE
 	struct timespec ts1, ts2;
@@ -5178,11 +4986,16 @@ static void populate(char *path, char *lastname)
 	clock_gettime(CLOCK_REALTIME, &ts1); /* Use CLOCK_MONOTONIC on FreeBSD */
 #endif
 
-	ndents = dentfill(path, &pdents);
-	if (!ndents)
+	dentfill(pctx);
+	if (!pctx->ndents)
 		return;
 
-	ENTSORT(pdents, ndents, entrycmpfn);
+	// ENTSORT uses the global cfg.
+	// shadow it with pctx->c_cfg
+	settings g_cfg = cfg;
+	cfg = pctx->c_cfg;
+	ENTSORT(pctx->pdents, pctx->ndents, entrycmpfn);
+	cfg = g_cfg;
 
 #ifdef DBGMODE
 	clock_gettime(CLOCK_REALTIME, &ts2);
@@ -5191,10 +5004,10 @@ static void populate(char *path, char *lastname)
 
 	/* Find cur from history */
 	/* No NULL check for lastname, always points to an array */
-	move_cursor(*lastname ? dentfind(lastname, ndents) : 0, 0);
+	// move_cursor(*lastname ? dentfind(lastname, ndents) : 0, 0);
 
 	// Force full redraw
-	last_curscroll = -1;
+	// last_curscroll = -1;
 }
 
 #ifndef NOFIFO
@@ -5374,30 +5187,30 @@ static int handle_context_switch(enum action sel)
 	return r;
 }
 
-static int set_sort_flags(int r)
+int set_sort_flags(context *pctx, int r)
 {
 	bool session = !r;
 
 	/* Set the correct input in case of a session load */
 	if (session) {
-		if (cfg.apparentsz) {
-			cfg.apparentsz = 0;
+		if (pctx->c_cfg.apparentsz) {
+			pctx->c_cfg.apparentsz = 0;
 			r = 'a';
-		} else if (cfg.blkorder) {
-			cfg.blkorder = 0;
+		} else if (pctx->c_cfg.blkorder) {
+			pctx->c_cfg.blkorder = 0;
 			r = 'd';
 		}
 
-		if (cfg.version)
+		if (pctx->c_cfg.version)
 			namecmpfn = &xstrverscasecmp;
 
-		if (cfg.reverse)
+		if (pctx->c_cfg.reverse)
 			entrycmpfn = &reventrycmp;
 	} else if ( r == CONTROL('T')) {
 		/* Cycling order: clear -> size -> time -> clear */
-		if (cfg.timeorder)
+		if (pctx->c_cfg.timeorder)
 			r = 's';
-		else if (cfg.sizeorder)
+		else if (pctx->c_cfg.sizeorder)
 			r = 'c';
 		else
 			r = 't';
@@ -5405,86 +5218,86 @@ static int set_sort_flags(int r)
 
 	switch (r) {
 	case 'a': /* Apparent du */
-		cfg.apparentsz ^= 1;
-		if (cfg.apparentsz) {
-			nftw_fn = &sum_asize;
-			cfg.blkorder = 1;
+		pctx->c_cfg.apparentsz ^= 1;
+		if (pctx->c_cfg.apparentsz) {
+			pctx->nftw_fn = &sum_asize;
+			pctx->c_cfg.blkorder = 1;
 			blk_shift = 0;
 		} else
-			cfg.blkorder = 0;
+			pctx->c_cfg.blkorder = 0;
 		// fallthrough
 	case 'd': /* Disk usage */
 		if (r == 'd') {
-			if (!cfg.apparentsz)
-				cfg.blkorder ^= 1;
-			nftw_fn = &sum_bsize;
-			cfg.apparentsz = 0;
+			if (!pctx->c_cfg.apparentsz)
+				pctx->c_cfg.blkorder ^= 1;
+			pctx->nftw_fn = &sum_bsize;
+			pctx->c_cfg.apparentsz = 0;
 			blk_shift = ffs(S_BLKSIZE) - 1;
 		}
 
-		if (cfg.blkorder) {
-			cfg.showdetail = 1;
+		if (pctx->c_cfg.blkorder) {
+			pctx->c_cfg.showdetail = 1;
 			printptr = &printent_long;
 		}
-		cfg.timeorder = 0;
-		cfg.sizeorder = 0;
-		cfg.extnorder = 0;
+		pctx->c_cfg.timeorder = 0;
+		pctx->c_cfg.sizeorder = 0;
+		pctx->c_cfg.extnorder = 0;
 		if (!session) {
-			cfg.reverse = 0;
+			pctx->c_cfg.reverse = 0;
 			entrycmpfn = &entrycmp;
 		}
 		endselection(); /* We are going to reload dir */
 		break;
 	case 'c':
-		cfg.timeorder = 0;
-		cfg.sizeorder = 0;
-		cfg.apparentsz = 0;
-		cfg.blkorder = 0;
-		cfg.extnorder = 0;
-		cfg.reverse = 0;
-		cfg.version = 0;
+		pctx->c_cfg.timeorder = 0;
+		pctx->c_cfg.sizeorder = 0;
+		pctx->c_cfg.apparentsz = 0;
+		pctx->c_cfg.blkorder = 0;
+		pctx->c_cfg.extnorder = 0;
+		pctx->c_cfg.reverse = 0;
+		pctx->c_cfg.version = 0;
 		entrycmpfn = &entrycmp;
 		namecmpfn = &xstricmp;
 		break;
 	case 'e': /* File extension */
-		cfg.extnorder ^= 1;
-		cfg.sizeorder = 0;
-		cfg.timeorder = 0;
-		cfg.apparentsz = 0;
-		cfg.blkorder = 0;
-		cfg.reverse = 0;
+		pctx->c_cfg.extnorder ^= 1;
+		pctx->c_cfg.sizeorder = 0;
+		pctx->c_cfg.timeorder = 0;
+		pctx->c_cfg.apparentsz = 0;
+		pctx->c_cfg.blkorder = 0;
+		pctx->c_cfg.reverse = 0;
 		entrycmpfn = &entrycmp;
 		break;
 	case 'r': /* Reverse sort */
-		cfg.reverse ^= 1;
-		entrycmpfn = cfg.reverse ? &reventrycmp : &entrycmp;
+		pctx->c_cfg.reverse ^= 1;
+		entrycmpfn = pctx->c_cfg.reverse ? &reventrycmp : &entrycmp;
 		break;
 	case 's': /* File size */
-		cfg.sizeorder ^= 1;
-		cfg.timeorder = 0;
-		cfg.apparentsz = 0;
-		cfg.blkorder = 0;
-		cfg.extnorder = 0;
-		cfg.reverse = 0;
+		pctx->c_cfg.sizeorder ^= 1;
+		pctx->c_cfg.timeorder = 0;
+		pctx->c_cfg.apparentsz = 0;
+		pctx->c_cfg.blkorder = 0;
+		pctx->c_cfg.extnorder = 0;
+		pctx->c_cfg.reverse = 0;
 		entrycmpfn = &entrycmp;
 		break;
 	case 't': /* Time */
-		cfg.timeorder ^= 1;
-		cfg.sizeorder = 0;
-		cfg.apparentsz = 0;
-		cfg.blkorder = 0;
-		cfg.extnorder = 0;
-		cfg.reverse = 0;
+		pctx->c_cfg.timeorder ^= 1;
+		pctx->c_cfg.sizeorder = 0;
+		pctx->c_cfg.apparentsz = 0;
+		pctx->c_cfg.blkorder = 0;
+		pctx->c_cfg.extnorder = 0;
+		pctx->c_cfg.reverse = 0;
 		entrycmpfn = &entrycmp;
 		break;
 	case 'v': /* Version */
-		cfg.version ^= 1;
-		namecmpfn = cfg.version ? &xstrverscasecmp : &xstricmp;
-		cfg.timeorder = 0;
-		cfg.sizeorder = 0;
-		cfg.apparentsz = 0;
-		cfg.blkorder = 0;
-		cfg.extnorder = 0;
+		pctx->c_cfg.version ^= 1;
+		namecmpfn = pctx->c_cfg.version ? &xstrverscasecmp : &xstricmp;
+		pctx->c_cfg.timeorder = 0;
+		pctx->c_cfg.sizeorder = 0;
+		pctx->c_cfg.apparentsz = 0;
+		pctx->c_cfg.blkorder = 0;
+		pctx->c_cfg.extnorder = 0;
 		break;
 	default:
 		return 0;
@@ -5578,7 +5391,7 @@ static void statusbar(char *path)
 			printw("%s", sort);
 
 		/* Timestamp */
-		print_time(&pent->t);
+		/* print_time(&pent->t); */
 
 		addch(' ');
 		addstr(get_lsperms(pent->mode));
@@ -5649,7 +5462,7 @@ static void draw_line(char *path, int ncols)
 	}
 
 	move(2 + last - curscroll, 0);
-	printptr(&pdents[last], ncols, false);
+	printptr(NULL, &pdents[last]);
 
 	if (g_state.oldcolor && (pdents[cur].flags & DIR_OR_LINK_TO_DIR)) {
 		if (!dir)  {/* First file is not a directory */
@@ -5662,7 +5475,7 @@ static void draw_line(char *path, int ncols)
 	}
 
 	move(2 + cur - curscroll, 0);
-	printptr(&pdents[cur], ncols, true);
+	printptr(NULL, &pdents[cur]);
 
 	/* Must reset e.g. no files in dir */
 	if (dir)
@@ -5706,6 +5519,7 @@ static void redraw(char *path)
 	//DPRINTF_D(cur);
 	DPRINTF_S(path);
 
+	// draw workspaces
 	addch('[');
 	for (i = 0; i < CTX_MAX; ++i) {
 		if (!g_ctx[i].c_cfg.ctxactive)
@@ -5769,7 +5583,7 @@ static void redraw(char *path)
 
 	/* Print listing */
 	for (i = curscroll; i < ndents && i < curscroll + onscreen; ++i)
-		printptr(&pdents[i], ncols, i == cur);
+		printptr(NULL, &pdents[i]);
 
 	/* Must reset e.g. no files in dir */
 	if (g_state.dircolor) {
@@ -5903,7 +5717,7 @@ begin:
 	}
 #endif
 
-	populate(path, lastname);
+	/* populate(path, &pdents, cfg); */
 	if (g_state.interrupt) {
 		g_state.interrupt = 0;
 		cfg.apparentsz = 0;
@@ -6410,7 +6224,7 @@ nochange:
 				cfg.blkorder = 0;
 				continue;
 			default: /* SEL_SORT */
-				r = set_sort_flags(get_input(messages[MSG_ORDER]));
+				/* r = set_sort_flags(get_input(messages[MSG_ORDER])); */
 				if (!r) {
 					printwait(messages[MSG_INVALID_KEY], &presel);
 					goto nochange;
@@ -7493,11 +7307,69 @@ static void cleanup(void)
 #endif
 }
 
-int main(int argc, char *argv[])
+/*
+ * Make a new context at location pctx. Return pctx if seccessful, NULL otherwise.
+ */
+context *make_context(context *pctx, char *path, settings c_cfg)
 {
-	char *arg = NULL;
-	char *session = NULL;
-	int fd, opt, sort = 0, pkey = '\0'; /* Plugin key */
+  strcpy(pctx->c_path, path);
+  pctx->c_last[0] = '\0';
+  pctx->c_name[0] = '\0';
+  pctx->c_fltr[0] = '\0';
+  pctx->nftw_fn = NULL;
+  pctx->color = 0;
+  pctx->c_cfg = c_cfg;
+  pctx->pdents = malloc(total_dents * sizeof(struct entry));
+  pctx->ndents = 0;
+  pctx->pnamebuf = malloc(NAMEBUF_INCR);
+  return (pctx->pdents && pctx->pnamebuf) ? pctx : NULL;
+}
+
+/*
+ * Free additional memory used by pctx.
+ */
+void free_context(context *pctx)
+{
+	free(pctx->pdents);
+	pctx->ndents = 0;
+	free(pctx->pnamebuf);
+}
+
+void clean_context(void *pctx) {
+  free_context((context*)pctx);
+  free(pctx);
+}
+
+int main() {
+  context *pctx = malloc(sizeof(context));
+  pctx = make_context(pctx, "/home/ym/", default_cfg);
+  if (!pctx)
+    return 1;
+  /* set_sort_flags(pctx, 'a'); */
+  populate(pctx);
+
+  size_t nameslen = 0;
+  for (int i = 0; i < pctx->ndents; i++) {
+	  // nlen includes the null byte
+	  nameslen += pctx->pdents[i].nlen + 36; // printent_long takes 32 bytes
+											 // additionaly to the file name
+  }
+  char *pconcatbuf = malloc(nameslen);
+  char *cursor = pconcatbuf;
+  for (int i = 0; i < pctx->ndents; i++) {
+    cursor = printent_long(cursor, &(pctx->pdents[i]));
+    *(cursor++) = '\n';
+  }
+  // terminate
+  *cursor = '\0';
+  printf(pconcatbuf);
+  clean_context(pctx);
+}
+
+int main_(int argc, char *argv[]) {
+  char *arg = NULL;
+  char *session = NULL;
+  int fd, opt, /* sort = 0 ,  */pkey = '\0'; /* Plugin key */
 #ifndef NOMOUSE
 	mmask_t mask;
 	char *middle_click_env = xgetenv(env_cfg[NNN_MCLICK], "\0");
@@ -7627,8 +7499,8 @@ int main(int argc, char *argv[])
 				idletimeout = atoi(optarg);
 			break;
 		case 'T':
-			if (env_opts_id < 0)
-				sort = (uchar)optarg[0];
+			/* if (env_opts_id < 0) */
+				/* sort = (uchar)optarg[0]; */
 			break;
 		case 'u':
 			cfg.prefersel = 1;
@@ -7888,8 +7760,8 @@ int main(int argc, char *argv[])
 #endif
 		return EXIT_FAILURE;
 
-	if (sort)
-		set_sort_flags(sort);
+	/* if (sort) */
+		/* set_sort_flags(sort); */
 
 	opt = browse(initpath, session, pkey);
 
