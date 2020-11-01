@@ -380,6 +380,7 @@ extern settings default_cfg;
 context *make_context(context *pctx, char* path, settings cfg);
 void free_context(context *pctx);
 void clean_context(void *pctx);
+int dentfind(context *pctx, const char *fname);
 int set_sort_flags(context *pctx, int r);
 void populate(context *pctx);
 char* printent(char *dst, const struct entry *ent);

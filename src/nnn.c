@@ -2704,10 +2704,10 @@ static int matches(const char *fltr)
  * Return the position of the matching entry or 0 otherwise
  * Note there's no NULL check for fname
  */
-static int dentfind(const char *fname, int n)
+int dentfind(context *pctx, const char *fname)
 {
-	for (int i = 0; i < n; ++i)
-		if (xstrcmp(fname, pdents[i].name) == 0)
+	for (int i = 0; i < pctx->ndents; ++i)
+		if (xstrcmp(fname, pctx->pdents[i].name) == 0)
 			return i;
 
 	return 0;
@@ -2725,7 +2725,7 @@ static int filterentries(char *path, char *lastname)
 
 	if (ndents && (ln[0] == FILTER || ln[0] == RFILTER) && *pln) {
 		if (matches(pln) != -1) {
-			move_cursor(dentfind(lastname, ndents), 0);
+			/* move_cursor(dentfind(lastname, ndents), 0); */
 			redraw(path);
 		}
 
@@ -6241,7 +6241,7 @@ nochange:
 					goto begin;
 
 				ENTSORT(pdents, ndents, entrycmpfn);
-				move_cursor(ndents ? dentfind(lastname, ndents) : 0, 0);
+				/* move_cursor(ndents ? dentfind(lastname, ndents) : 0, 0); */
 			}
 			continue;
 		case SEL_STATS: // fallthrough
