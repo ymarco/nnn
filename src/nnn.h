@@ -34,6 +34,12 @@
 #include <sys/stat.h>
 #include <ftw.h>
 
+#ifdef PCRE
+#include <pcre.h>
+#else
+#include <regex.h>
+#endif
+
 #define CONTROL(c) ((c) & 0x1f)
 
 #ifndef ESC
@@ -373,6 +379,68 @@ typedef struct {
 	int (*nftw_fn)(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf);
 	uint color; /* Color code for directories */
 } context;
+
+#define MIN_DISPLAY_COLS ((CTX_MAX * 2) + 2) /* Two chars for [ and ] */
+#define LONG_SIZE sizeof(ulong)
+#define ARCHIVE_CMD_LEN 16
+#define BLK_SHIFT_512 9
+
+/* Detect hardlinks in du */
+#define HASH_BITS (0xFFFFFF)
+#define HASH_OCTETS (HASH_BITS >> 6) /* 2^6 = 64 */
+
+/* Entry flags */
+#define DIR_OR_LINK_TO_DIR 0x01
+#define HARD_LINK 0x02
+#define SYM_ORPHAN 0x04
+#define FILE_MISSING 0x08
+#define FILE_SELECTED 0x10
+
+/* Macros to define process spawn behaviour as flags */
+#define F_NONE    0x00  /* no flag set */
+#define F_MULTI   0x01  /* first arg can be combination of args; to be used with F_NORMAL */
+#define F_NOWAIT  0x02  /* don't wait for child process (e.g. file manager) */
+#define F_NOTRACE 0x04  /* suppress stdout and strerr (no traces) */
+#define F_NORMAL  0x08  /* spawn child process in non-curses regular CLI mode */
+#define F_CONFIRM 0x10  /* run command - show results before exit (must have F_NORMAL) */
+#define F_CHKRTN  0x20  /* wait for user prompt if cmd returns failure status */
+#define F_CLI     (F_NORMAL | F_MULTI)
+#define F_SILENT  (F_CLI | F_NOTRACE)
+
+/* Version compare macros */
+/*
+ * states: S_N: normal, S_I: comparing integral part, S_F: comparing
+ *         fractional parts, S_Z: idem but with leading Zeroes only
+ */
+#define S_N 0x0
+#define S_I 0x3
+#define S_F 0x6
+#define S_Z 0x9
+
+/* result_type: VCMP: return diff; VLEN: compare using len_diff/diff */
+#define VCMP 2
+#define VLEN 3
+
+/* Volume info */
+#define FREE 0
+#define CAPACITY 1
+
+/* STRUCTURES */
+
+/* Key-value pairs from env */
+typedef struct {
+	int key;
+	int off;
+} kv;
+
+typedef struct {
+#ifdef PCRE
+	const pcre *pcrex;
+#else
+	const regex_t *regex;
+#endif
+	const char *str;
+} fltrexp_t;
 
 
 extern settings default_cfg;
