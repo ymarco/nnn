@@ -3389,9 +3389,9 @@ static char *print_time(char *dst, const time_t *timep)
 }
 
 /*
- * Write entry to dst. Return the minimal location after dest which was not written.
- * No null terminator is added.
- * */
+ * Write strirng info about entry to dst. Return the minimal location after dest
+ * which was not written. No null terminator is added.
+ */
 char* printent(char *dst, const struct entry *ent)
 {
 	uchar pair = 0;
@@ -3955,10 +3955,8 @@ char *visit_parent(char *path, char *newpath)
 
 	dir = xdirname(newpath);
 	if (chdir(dir) == -1) {
-		printwarn(presel);
 		return NULL;
 	}
-
 	return dir;
 }
 
@@ -3968,7 +3966,7 @@ static void valid_parent(char *path, char *lastname)
 	xstrsncpy(lastname, xbasename(path), NAME_MAX + 1);
 
 	while (!istopdir(path))
-		if (visit_parent(path, NULL, NULL))
+		if (visit_parent(path, NULL))
 			break;
 
 	printwarn(NULL);
@@ -4673,6 +4671,10 @@ static bool selforparent(const char *path)
 	return path[0] == '.' && (path[1] == '\0' || (path[1] == '.' && path[2] == '\0'));
 }
 
+/*
+ * Fill pctx->pdents and pctx->ndents with info about the files in pctx->c_path.
+ * Calculate disk usages etc. if set in pctx->c_cfg.
+ */
 int dentfill(context *pctx)
 {
 	char *path = pctx->c_path;
@@ -4741,7 +4743,7 @@ int dentfill(context *pctx)
 		namep = dp->d_name;
 
 		if (selforparent(namep))
-			continue;
+			continue; // don't get into recursion
 
 		if (!l_cfg.showhidden && namep[0] == '.') {
 			if (!l_cfg.blkorder)
@@ -4908,6 +4910,10 @@ exit:
 	return n;
 }
 
+/*
+ * Use dentfill on pctx and then sort pctx->pdents accorting to the sorting
+ * configuration in pctx->c_cfg.
+ */
 void populate(context *pctx)
 {
 #ifdef DBGMODE
@@ -5731,7 +5737,7 @@ nochange:
 #ifndef NOMOUSE
 			if (sel == SEL_BACK) {
 #endif
-				dir = visit_parent(path, newpath, &presel);
+				/* dir = visit_parent(path, newpath, &presel); */
 				if (!dir)
 					goto nochange;
 
@@ -7292,7 +7298,7 @@ int main() {
   }
   // terminate
   *cursor = '\0';
-  printf(pconcatbuf);
+  printf("%s", pconcatbuf);
   clean_context(pctx);
 }
 
