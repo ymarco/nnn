@@ -381,6 +381,8 @@ context *make_context(context *pctx, char* path, settings cfg);
 void free_context(context *pctx);
 void clean_context(void *pctx);
 int dentfind(context *pctx, const char *fname);
+char *visit_parent(char *path, char *newpath);
+size_t mkpath(const char *dir, const char *name, char *out);
 int set_sort_flags(context *pctx, int r);
 void populate(context *pctx);
 char* printent(char *dst, const struct entry *ent);

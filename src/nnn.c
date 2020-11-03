@@ -965,7 +965,7 @@ static inline bool getutil(char *util)
  * Updates out with "dir/name or "/name"
  * Returns the number of bytes copied including the terminating NULL byte
  */
-static size_t mkpath(const char *dir, const char *name, char *out)
+size_t mkpath(const char *dir, const char *name, char *out)
 {
 	size_t len;
 
@@ -4005,17 +4005,15 @@ static void handle_archive(char *fpath, char op)
 		get_output(NULL, 0, util, arg, fpath, TRUE);
 }
 
-static char *visit_parent(char *path, char *newpath, int *presel)
+/*
+ * Write the path to the parent of PATH to NEWPATH.
+
+ * Write to PATH itself if NEWPATH in NULL. Otherwise it should have allocated
+ * at least the length of PATH.
+ */
+char *visit_parent(char *path, char *newpath)
 {
 	char *dir;
-
-	/* There is no going back */
-	if (istopdir(path)) {
-		/* Continue in type-to-nav mode, if enabled */
-		if (cfg.filtermode && presel)
-			*presel = FILTER;
-		return NULL;
-	}
 
 	/* Use a copy as xdirname() may change the string passed */
 	if (newpath)
